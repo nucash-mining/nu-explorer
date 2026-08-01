@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nuChain Explorer</title>
+<style>
+  :root{--bg:#0d1117;--surface:#161b22;--ink:#e6edf3;--soft:#8b949e;--accent:#2dd4bf;--accent2:#a78bfa;--line:#21262d;--good:#3fb950}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:70rem;margin:0 auto;padding:1.5rem 1rem 5rem}
+  header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;padding-bottom:1.2rem;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:.6rem;font-size:1.35rem;font-weight:700;letter-spacing:-.01em}
+  .brand .z{color:var(--accent)}
+  .chip{font-family:ui-monospace,Menlo,monospace;font-size:.72rem;color:var(--soft);border:1px solid var(--line);padding:.15rem .5rem;border-radius:99px}
+  .status{display:flex;align-items:center;gap:.4rem;font-size:.8rem}
+  .dot{width:.6rem;height:.6rem;border-radius:50%;background:var(--soft)}
+  .dot.up{background:var(--good);box-shadow:0 0 8px var(--good)}
+  .dot.down{background:#f85149}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:1rem;margin:1.5rem 0}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:1rem 1.1rem}
+  .stat .k{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--soft)}
+  .stat .v{font-size:1.5rem;font-weight:700;margin-top:.3rem;font-variant-numeric:tabular-nums}
+  .stat .v.accent{color:var(--accent)} .stat .v.accent2{color:var(--accent2)}
+  h2{font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;color:var(--accent2);margin:2rem 0 .7rem}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:.85rem}
+  th{text-align:left;padding:.6rem .9rem;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--soft);border-bottom:1px solid var(--line)}
+  td{padding:.55rem .9rem;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:0}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:.8rem}
+  .muted{color:var(--soft)}
+  .banner{background:#1c2333;border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:6px;padding:.7rem 1rem;margin:1rem 0;font-size:.85rem;color:var(--soft)}
+  footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);font-size:.78rem;color:var(--soft);display:flex;gap:1.2rem;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><span class="z">nu</span>Chain&nbsp;Explorer</div>
+    <div style="display:flex;gap:1rem;align-items:center">
+      <span class="chip" id="chainid">nuchain_28277-1</span>
+      <span class="status"><span class="dot" id="dot"></span><span id="statusText" class="muted">connecting…</span></span>
+    </div>
+  </header>
+
+  <div class="banner" id="banner">
+    Cosmos-SDK explorer for nuChain — the zk-rollup EVM anchored to WATTx. Native <b>NU</b>,
+    bridged <b>wWTX</b>. Reads live from the chain's REST API; set the endpoint below.
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Latest Height</div><div class="v accent" id="height">—</div></div>
+    <div class="stat"><div class="k">Block Time</div><div class="v" id="blocktime">—</div></div>
+    <div class="stat"><div class="k">Validators</div><div class="v accent2" id="vals">—</div></div>
+    <div class="stat"><div class="k">Bonded NU</div><div class="v" id="bonded">—</div></div>
+  </div>
+
+  <h2>Latest Blocks</h2>
+  <div class="card"><table>
+    <thead><tr><th>Height</th><th>Hash</th><th>Txs</th><th>Proposer</th><th>Time</th></tr></thead>
+    <tbody id="blocks"><tr><td colspan="5" class="muted" style="padding:1.2rem .9rem">Waiting for chain…</td></tr></tbody>
+  </table></div>
+
+  <footer>
+    <span>EVM RPC: <a href="https://evm-nu.wattxchange.app">evm-nu.wattxchange.app</a></span>
+    <span>REST: <span class="mono" id="restlabel">/api</span></span>
+    <span>Bridge: WTX ⇄ wWTX via NuChainBridge</span>
+    <span><a href="https://github.com/nucash-mining/nuChain">source</a></span>
+  </footer>
+</div>
+
+<script>
+// REST endpoint resolution order: ?rest= param, then the public host, then localhost dev.
+const params = new URLSearchParams(location.search);
+const REST = params.get('rest')
+  || (location.hostname.endsWith('wattxchange.app') ? 'https://api-nu.wattxchange.app' : 'http://127.0.0.1:1317');
+document.getElementById('restlabel').textContent = REST;
+
+const $ = id => document.getElementById(id);
+const short = h => h ? h.slice(0,10)+'…'+h.slice(-6) : '—';
+let lastH = null, lastT = null;
+
+async function j(path){ const r = await fetch(REST+path,{headers:{accept:'application/json'}}); if(!r.ok) throw new Error(r.status); return r.json(); }
+
+async function tick(){
+  try{
+    const b = await j('/cosmos/base/tendermint/v1beta1/blocks/latest');
+    const hd = b.block.header;
+    const h = +hd.height, t = new Date(hd.time);
+    $('dot').className='dot up'; $('statusText').textContent='live'; $('statusText').className='';
+    $('chainid').textContent = hd.chain_id;
+    $('height').textContent = h.toLocaleString();
+    if(lastH!==null && h>lastH){ $('blocktime').textContent = ((t-lastT)/(h-lastH)/1000).toFixed(1)+'s'; }
+    lastH=h; lastT=t;
+
+    // rolling recent blocks
+    const rows=[];
+    for(let i=0;i<8 && h-i>0;i++){
+      const blk = i===0? b : await j('/cosmos/base/tendermint/v1beta1/blocks/'+(h-i));
+      const bh=blk.block.header; const txs=(blk.block.data.txs||[]).length;
+      rows.push(`<tr><td class="accent"><b>${(+bh.height).toLocaleString()}</b></td>
+        <td class="mono">${short(blk.block_id?.hash||'')}</td><td>${txs}</td>
+        <td class="mono muted">${short(bh.proposer_address)}</td>
+        <td class="muted">${new Date(bh.time).toLocaleTimeString()}</td></tr>`);
+    }
+    $('blocks').innerHTML = rows.join('');
+
+    try{
+      const v = await j('/cosmos/staking/v1beta1/validators?pagination.limit=200&status=BOND_STATUS_BONDED');
+      $('vals').textContent = v.validators.length;
+      const bonded = v.validators.reduce((s,x)=>s+(+x.tokens||0),0)/1e18;
+      $('bonded').textContent = bonded.toLocaleString(undefined,{maximumFractionDigits:0})+' NU';
+    }catch(e){}
+  }catch(e){
+    $('dot').className='dot down'; $('statusText').textContent='chain unreachable ('+REST+')';
+  }
+}
+tick(); setInterval(tick, 3000);
+</script>
+</body>
+</html>
